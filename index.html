@@ -577,7 +577,7 @@
     saveSchedule(); render();
   });
 
-  // 修復存成 PDF 功能
+  // 調整後的存成 PDF 功能：自動調整縮放與置中
   document.getElementById('pdfBtn').addEventListener('click', async function(){
     var btn = this;
     var origText = btn.textContent;
@@ -595,11 +595,36 @@
       var imgData = canvas.toDataURL('image/jpeg', 0.95);
 
       var { jsPDF } = window.jspdf;
-      var pdf = new jsPDF('p', 'mm', 'a4');
-      var pdfWidth = pdf.internal.pageSize.getWidth();
-      var pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      // 依圖片寬高比選擇方向 (預設轉為橫向以配合行事曆呈現)
+      var isLandscape = canvas.width > canvas.height;
+      var pdf = new jsPDF({
+        orientation: isLandscape ? 'l' : 'p',
+        unit: 'mm',
+        format: 'a4'
+      });
 
-      pdf.addImage(imgData, 'JPEG', 0, 10, pdfWidth, pdfHeight);
+      var pageWidth = pdf.internal.pageSize.getWidth();
+      var pageHeight = pdf.internal.pageSize.getHeight();
+
+      // 計算縮放比例，預留邊界 margin
+      var margin = 10;
+      var maxWidth = pageWidth - margin * 2;
+      var maxHeight = pageHeight - margin * 2;
+
+      var imgWidth = maxWidth;
+      var imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      if (imgHeight > maxHeight) {
+        imgHeight = maxHeight;
+        imgWidth = (canvas.width * imgHeight) / canvas.height;
+      }
+
+      // 置中計算
+      var xPos = (pageWidth - imgWidth) / 2;
+      var yPos = (pageHeight - imgHeight) / 2;
+
+      pdf.addImage(imgData, 'JPEG', xPos, yPos, imgWidth, imgHeight);
       var fileName = view.getFullYear() + '-' + String(view.getMonth() + 1).padStart(2, '0') + '-排班表.pdf';
       pdf.save(fileName);
     } catch (e) {
