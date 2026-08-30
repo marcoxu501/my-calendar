@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>行事曆</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+
+<!-- 引入 html2canvas 與 jsPDF 以支援 PDF 生成與圖片截取 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+  :root{
+    --bg:#1B1F2A;
+    --paper:#F6F1E4;
+    --paper-shadow:#E4DBC4;
+    --ink:#232025;
+    --muted:#8B8478;
+    --rule:#D8CFB8;
+    --brass:#C79A3E;
+    --brass-dark:#9C7527;
+    --teal:#3A7D7B;
+    --teal-dark:#285856;
+    --danger:#B24444;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(circle at 20% -10%, rgba(199,154,62,0.08), transparent 45%),
+      var(--bg);
+    min-height:100vh;
+    font-family:'Noto Sans TC', sans-serif;
+    color:var(--ink);
+    padding:24px 12px 48px;
+    display:flex;
+    justify-content:center;
+  }
+  .app{ width:100%; max-width:980px; }
+
+  .rings{
+    display:flex; justify-content:center; gap:28px;
+    margin-bottom:-14px; position:relative; z-index:2;
+  }
+  .rings span{
+    width:22px; height:28px; border-radius:11px;
+    background:linear-gradient(180deg, #DCD3B8, #B9AE8C);
+    border:1px solid #948a68;
+    box-shadow: inset 0 2px 2px rgba(255,255,255,0.35), 0 3px 4px rgba(0,0,0,0.35);
+  }
+
+  .board{
+    background:var(--paper);
+    border-radius:6px;
+    padding:32px 30px 22px;
+    box-shadow:0 24px 48px rgba(0,0,0,0.45), 0 2px 0 var(--paper-shadow) inset;
+    position:relative;
+  }
+
+  header.head{
+    display:flex; align-items:center; justify-content:center;
+    gap:14px;
+    border-bottom:2px solid var(--ink);
+    padding-bottom:14px; margin-bottom:18px;
+  }
+  .nav{ display:flex; align-items:center; gap:12px; }
+  .nav .ym{
+    font-family:'Noto Serif TC', serif; font-size:26px; font-weight:600;
+    min-width:140px; text-align:center;
+  }
+  .nav .ym small{
+    font-family:'Noto Sans TC', sans-serif; font-size:15px;
+    font-weight:400; color:var(--muted); margin-left:2px;
+  }
+  button.iconbtn{
+    width:34px;height:34px; border-radius:50%; border:1px solid var(--ink);
+    background:transparent; color:var(--ink); font-size:17px; line-height:1;
+    cursor:pointer; display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;
+    transition:background .15s ease, color .15s ease;
+  }
+  button.iconbtn:hover{ background:var(--ink); color:var(--paper); }
+  button.iconbtn:focus-visible, .daycell:focus-visible, button:focus-visible,
+  input:focus-visible, select:focus-visible, .chip:focus-visible{
+    outline:2px solid var(--brass); outline-offset:2px;
+  }
+  .todaybtn{
+    border:1px solid var(--brass-dark); background:transparent; color:var(--brass-dark);
+    font-family:'Noto Sans TC', sans-serif; font-size:12px; padding:5px 11px;
+    border-radius:16px; cursor:pointer; letter-spacing:0.05em; flex-shrink:0;
+  }
+  .todaybtn:hover{ background:var(--brass-dark); color:var(--paper); }
+
+  .layout{ display:grid; grid-template-columns:1fr 280px; gap:24px; }
+  @media (max-width:700px){
+    .layout{ grid-template-columns:1fr; gap:16px; }
+    body{ padding:10px 6px 32px; }
+    .board{ padding:16px 11px 14px; }
+    .rings{ display:none; }
+    header.head{ margin-bottom:12px; padding-bottom:10px; }
+    .nav .ym{ font-size:22px; min-width:118px; }
+  }
+
+  .weekdays{ display:grid; grid-template-columns:repeat(7,1fr); margin-bottom:4px; }
+  .weekdays span{
+    text-align:center; font-size:11px; color:var(--muted);
+    letter-spacing:0.08em; padding-bottom:4px;
+  }
+
+  .grid{
+    display:grid; grid-template-columns:repeat(7,1fr);
+    grid-auto-rows:minmax(98px,auto); gap:4px;
+  }
+  @media (max-width:700px){
+    .grid{ grid-auto-rows:minmax(84px,auto); gap:3px; }
+  }
+  .daycell{
+    position:relative;
+    border:1px solid var(--rule); border-radius:4px;
+    background:transparent; padding:4px 3px 3px; cursor:pointer;
+    text-align:left; font-family:'Noto Sans TC', sans-serif;
+    display:flex; flex-direction:column; gap:2px;
+    transition:background .12s ease, border-color .12s ease;
+  }
+  .daycell:hover{ background:rgba(199,154,62,0.10); }
+  .daycell.otherMonth{ opacity:0.32; }
+  .daycell .toprow{ display:flex; align-items:center; justify-content:flex-start; }
+  .daycell .num{ font-family:'Noto Serif TC', serif; font-size:13px; font-weight:600; }
+  .daycell.isToday .num{
+    display:inline-flex; align-items:center;justify-content:center;
+    width:19px;height:19px; border-radius:50%;
+    background:var(--brass); color:var(--paper);
+  }
+  .daycell.selected{
+    border-color:var(--teal); border-width:2px; background:rgba(58,125,123,0.08);
+  }
+  .badges{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:2px;
+    margin-top:auto;
+  }
+  .badge{
+    height:15px; border-radius:3px; font-size:7.5px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+    line-height:1; overflow:hidden; letter-spacing:0;
+  }
+  @media (max-width:700px){
+    .badge{ height:16px; font-size:8px; }
+    .daycell .num{ font-size:12px; }
+  }
+
+  .panel{
+    border-left:1px dashed var(--rule); padding-left:22px;
+    display:flex; flex-direction:column;
+  }
+  @media (max-width:700px){
+    .panel{ border-left:none; border-top:1px dashed var(--rule); padding-left:0; padding-top:14px; }
+  }
+  .panel .sel{ font-family:'Noto Serif TC', serif; font-size:15px; margin:0 0 12px; }
+  .panel .sel .wd{ font-family:'Noto Sans TC', sans-serif; font-size:12px; color:var(--muted); margin-left:6px; }
+  .panel h3{
+    font-family:'Noto Sans TC', sans-serif; font-size:11px; color:var(--muted);
+    letter-spacing:0.08em; margin:0 0 6px;
+  }
+  .section{ margin-bottom:14px; }
+
+  .chiprow{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:4px; }
+  .chip{
+    display:inline-flex; align-items:center; gap:5px;
+    border:1.5px solid var(--rule); border-radius:14px;
+    padding:4px 10px 4px 6px; font-size:12px; cursor:pointer;
+    background:#fff; color:var(--ink);
+  }
+  .chip .sw{ width:10px;height:10px;border-radius:50%; flex-shrink:0; }
+  .schedhint{ font-size:11px; color:var(--muted); margin:2px 0 0; }
+  .schedhint.warn{ color:var(--danger); }
+  .nostaff{ font-size:12px; color:var(--muted); margin:0 0 6px; }
+
+  .footer{
+    margin-top:18px; display:flex; justify-content:space-between; align-items:center;
+    flex-wrap:wrap; gap:10px; font-size:11px; color:var(--muted);
+  }
+  .footlinks{ display:flex; flex-wrap:wrap; gap:8px; }
+  .resetlink{
+    background:none;border:1px solid var(--rule); color:var(--muted);
+    cursor:pointer; font-size:11px; padding:5px 10px; border-radius:14px;
+  }
+  .resetlink:hover{ color:var(--ink); border-color:var(--ink); }
+  .resetlink.danger:hover{ color:var(--danger); border-color:var(--danger); }
+  .resetlink.action{ color:var(--teal-dark); border-color:var(--teal); }
+  .resetlink.action:hover{ background:var(--teal); color:#fff; }
+
+  .loading{ text-align:center; padding:60px 0; color:var(--muted); font-size:13px; }
+
+  .overlay{
+    position:fixed; inset:0; background:rgba(20,20,20,0.55);
+    display:none; align-items:center; justify-content:center;
+    padding:16px; z-index:50;
+  }
+  .overlay.open{ display:flex; }
+  .modal{
+    background:var(--paper); border-radius:8px; width:100%; max-width:400px;
+    max-height:86vh; overflow-y:auto; padding:20px;
+    box-shadow:0 20px 50px rgba(0,0,0,0.5);
+  }
+  .modal h2{ font-family:'Noto Serif TC', serif; font-size:17px; margin:0 0 4px; }
+  .modal .desc{ font-size:12px; color:var(--muted); margin:0 0 14px; }
+  .stafflist{ list-style:none; margin:0 0 16px; padding:0; display:flex; flex-direction:column; gap:6px; }
+  .stafflist li{
+    display:flex; align-items:center; gap:8px;
+    border:1px solid var(--rule); border-radius:5px; padding:6px 8px;
+    background:rgba(255,255,255,0.4);
+  }
+  .stafflist .sw{ width:16px;height:16px;border-radius:4px; flex-shrink:0; }
+  .stafflist .code{ font-size:13px; font-weight:500; flex:1; }
+  .stafflist .del{
+    background:none;border:none; color:var(--muted); cursor:pointer; font-size:14px; padding:2px;
+  }
+  .stafflist .del:hover{ color:var(--danger); }
+  .swatches{ display:flex; flex-wrap:wrap; gap:6px; margin:6px 0; }
+  .swatch{
+    width:22px;height:22px;border-radius:50%; cursor:pointer;
+    border:2px solid transparent;
+  }
+  .swatch.sel{ border-color:var(--ink); }
+  .staffform{ border-top:1px solid var(--rule); padding-top:12px; display:flex; flex-direction:column; gap:7px; }
+  .staffform label{ font-size:11px; color:var(--muted); letter-spacing:0.04em; }
+  .staffform input[type=text]{
+    font-family:'Noto Sans TC', sans-serif; font-size:13px; padding:8px 9px;
+    border:1px solid var(--rule); border-radius:4px; background:#fff; color:var(--ink); width:100%;
+  }
+  .staffform .customcolor{ display:flex; align-items:center; gap:8px; margin-top:2px; }
+  .staffform .customcolor input[type=color]{
+    width:34px;height:26px; border:1px solid var(--rule); border-radius:4px; padding:0; cursor:pointer;
+  }
+  .staffform button.add{
+    margin-top:4px; background:var(--brass-dark); color:#fff; border:none;
+    border-radius:4px; padding:9px; font-size:13px; font-weight:500; cursor:pointer;
+  }
+  .staffform button.add:hover{ background:#7d5f1e; }
+  .err{ font-size:11px; color:var(--danger); min-height:14px; }
+  .modalclose{
+    float:right; background:none; border:none; font-size:18px; color:var(--muted);
+    cursor:pointer; line-height:1;
+  }
+  .modalclose:hover{ color:var(--ink); }
+
+  @media (prefers-reduced-motion:reduce){ *{ transition:none !important; } }
+
+  @media print{
+    body{ background:#fff; padding:0; }
+    .rings, .todaybtn, .iconbtn, .panel, .footer, .overlay{ display:none !important; }
+    .board{ box-shadow:none; border-radius:0; padding:6px; }
+    .layout{ grid-template-columns:1fr; }
+    .daycell{ break-inside:avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="rings" aria-hidden="true">
+    <span></span><span></span><span></span><span></span><span></span><span></span>
+  </div>
+  <div class="board" id="board">
+    <header class="head">
+      <button class="iconbtn" id="prevBtn" aria-label="上個月">‹</button>
+      <div class="nav">
+        <div class="ym" id="ymLabel"></div>
+        <button class="todaybtn" id="todayBtn">今天</button>
+      </div>
+      <button class="iconbtn" id="nextBtn" aria-label="下個月">›</button>
+    </header>
+
+    <div id="loadingMsg" class="loading">載入中…</div>
+
+    <div class="layout" id="layoutWrap" style="display:none;">
+      <div>
+        <div class="weekdays">
+          <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+        </div>
+        <div class="grid" id="grid"></div>
+      </div>
+
+      <div class="panel">
+        <p class="sel"><span id="selTitle"></span><span class="wd" id="selWeekday"></span></p>
+
+        <div class="section">
+          <h3>排班（最多 9 人）</h3>
+          <p class="nostaff" id="noStaffMsg" style="display:none;">尚未新增同仁，請至下方「管理同仁」新增。</p>
+          <div class="chiprow" id="staffChips"></div>
+          <p class="schedhint" id="schedHint"></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span id="totalMsg"></span>
+      <div class="footlinks">
+        <button class="resetlink" id="manageStaffBtn">管理同仁</button>
+        <button class="resetlink danger" id="resetBtn">清空本月排班</button>
+        <button class="resetlink action" id="pdfBtn">存成 PDF</button>
+        <button class="resetlink action" id="shareBtn">分享</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="staffOverlay">
+  <div class="modal">
+    <button class="modalclose" id="closeModalBtn" aria-label="關閉">✕</button>
+    <h2>管理同仁</h2>
+    <p class="desc">設定同仁的代號與顏色，即可在排班中指派。</p>
+    <ul class="stafflist" id="staffList"></ul>
+    <div class="staffform">
+      <label for="staffCode">代號（最多 2 個字）</label>
+      <input type="text" id="staffCode" maxlength="2" placeholder="例如：王、A1">
+      <label>選擇顏色</label>
+      <div class="swatches" id="swatches"></div>
+      <div class="customcolor">
+        <input type="color" id="customColor" value="#3A7D7B">
+        <span style="font-size:11px;color:var(--muted);">或自訂顏色</span>
+      </div>
+      <div class="err" id="staffErr"></div>
+      <button type="button" class="add" id="addStaffBtn">新增同仁</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var STAFF_KEY = 'calendar-staff-v1';
+  var SCHED_KEY = 'calendar-schedule-v1';
+  var MAX_PER_DAY = 9;
+
+  var staff = [];
+  var schedule = {};
+
+  var view = new Date(); view.setDate(1);
+  var selected = new Date();
+  var selectedSwatch = null;
+
+  var PALETTE = ['#3A7D7B','#C79A3E','#C15B41','#6B4E71','#4C7A3D','#4C637A','#B4577B','#B98B2E','#39537A','#9C5A32','#2E7D5B','#7A4C7A'];
+
+  var loadingMsg = document.getElementById('loadingMsg');
+  var layoutWrap = document.getElementById('layoutWrap');
+  var ymLabel = document.getElementById('ymLabel');
+  var grid = document.getElementById('grid');
+  var selTitle = document.getElementById('selTitle');
+  var selWeekday = document.getElementById('selWeekday');
+  var totalMsg = document.getElementById('totalMsg');
+  var staffChips = document.getElementById('staffChips');
+  var noStaffMsg = document.getElementById('noStaffMsg');
+  var schedHint = document.getElementById('schedHint');
+
+  var staffOverlay = document.getElementById('staffOverlay');
+  var staffList = document.getElementById('staffList');
+  var swatchesEl = document.getElementById('swatches');
+  var staffCode = document.getElementById('staffCode');
+  var customColor = document.getElementById('customColor');
+  var staffErr = document.getElementById('staffErr');
+
+  function fmt(d){
+    var y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0');
+    return y+'-'+m+'-'+day;
+  }
+  function sameDay(a,b){ return fmt(a)===fmt(b); }
+  function mondayFirstDow(d){ return (d.getDay()+6)%7; }
+
+  function contrastText(hex){
+    var c = hex.replace('#','');
+    if(c.length===3) c = c.split('').map(function(x){return x+x;}).join('');
+    var r=parseInt(c.substr(0,2),16), g=parseInt(c.substr(2,2),16), b=parseInt(c.substr(4,2),16);
+    var lum = (0.299*r+0.587*g+0.114*b)/255;
+    return lum > 0.6 ? '#232025' : '#FBF8F0';
+  }
+
+  function hasCloudStorage(){
+    return typeof window.storage !== 'undefined' && window.storage && typeof window.storage.get === 'function';
+  }
+  async function storageGet(key){
+    if(hasCloudStorage()){
+      try{ var r = await window.storage.get(key, false); return (r && r.value) ? r.value : null; }
+      catch(e){ return null; }
+    }
+    try{ return localStorage.getItem(key); }catch(e){ return null; }
+  }
+  async function storageSet(key, value){
+    if(hasCloudStorage()){
+      try{ await window.storage.set(key, value, false); return; }catch(e){}
+    }
+    try{ localStorage.setItem(key, value); }catch(e){}
+  }
+
+  async function loadAll(){
+    try{ var v1 = await storageGet(STAFF_KEY); if(v1) staff = JSON.parse(v1); }catch(e){ staff=[]; }
+    try{ var v2 = await storageGet(SCHED_KEY); if(v2) schedule = JSON.parse(v2); }catch(e){ schedule={}; }
+  }
+  async function saveStaff(){ await storageSet(STAFF_KEY, JSON.stringify(staff)); }
+  async function saveSchedule(){ await storageSet(SCHED_KEY, JSON.stringify(schedule)); }
+
+  function weekdayName(d){ var n=['日','一','二','三','四','五','六']; return '星期'+n[d.getDay()]; }
+  function staffById(id){ for(var i=0;i<staff.length;i++) if(staff[i].id===id) return staff[i]; return null; }
+
+  function buildSwatches(){
+    swatchesEl.innerHTML='';
+    PALETTE.forEach(function(color){
+      var sw = document.createElement('div');
+      sw.className='swatch';
+      sw.style.background=color;
+      sw.addEventListener('click', function(){
+        selectedSwatch = color;
+        customColor.value = color;
+        Array.from(swatchesEl.children).forEach(function(x){ x.classList.remove('sel'); });
+        sw.classList.add('sel');
+      });
+      swatchesEl.appendChild(sw);
+    });
+  }
+
+  function render(){
+    ymLabel.innerHTML = (view.getFullYear())+' 年<small>'+(view.getMonth()+1)+' 月</small>';
+    var year=view.getFullYear(), month=view.getMonth();
+    var firstDow = mondayFirstDow(new Date(year,month,1));
+    var daysInMonth = new Date(year,month+1,0).getDate();
+    var daysInPrev = new Date(year,month,0).getDate();
+    var today = new Date();
+
+    grid.innerHTML='';
+    var totalCells = Math.ceil((firstDow+daysInMonth)/7)*7;
+    var totalScheduled = 0;
+
+    for(var i=0;i<totalCells;i++){
+      var dayNum, cellDate, other=false;
+      if(i<firstDow){ dayNum=daysInPrev-firstDow+i+1; cellDate=new Date(year,month-1,dayNum); other=true; }
+      else if(i>=firstDow+daysInMonth){ dayNum=i-firstDow-daysInMonth+1; cellDate=new Date(year,month+1,dayNum); other=true; }
+      else { dayNum=i-firstDow+1; cellDate=new Date(year,month,dayNum); }
+
+      var key = fmt(cellDate);
+      var dayStaffIds = (schedule[key]||[]).filter(function(id){ return !!staffById(id); });
+      if(!other) totalScheduled += dayStaffIds.length;
+
+      var cell = document.createElement('button');
+      cell.type='button';
+      cell.className='daycell'+(other?' otherMonth':'')+(sameDay(cellDate,today)?' isToday':'')+(sameDay(cellDate,selected)?' selected':'');
+      cell.setAttribute('aria-label', key+(dayStaffIds.length?'，'+dayStaffIds.length+' 人排班':''));
+
+      var toprow = document.createElement('div'); toprow.className='toprow';
+      var num = document.createElement('span'); num.className='num'; num.textContent=dayNum;
+      toprow.appendChild(num);
+      cell.appendChild(toprow);
+
+      if(dayStaffIds.length){
+        var badges = document.createElement('div'); badges.className='badges';
+        dayStaffIds.slice(0,MAX_PER_DAY).forEach(function(id){
+          var s = staffById(id);
+          var b = document.createElement('span'); b.className='badge';
+          b.style.background=s.color; b.style.color=contrastText(s.color);
+          b.textContent=s.code;
+          badges.appendChild(b);
+        });
+        cell.appendChild(badges);
+      }
+
+      (function(cd){ cell.addEventListener('click', function(){ selected=cd; render(); }); })(cellDate);
+      grid.appendChild(cell);
+    }
+
+    totalMsg.textContent = '本月排班 '+totalScheduled+' 人次';
+    renderPanel();
+  }
+
+  function renderPanel(){
+    selTitle.textContent = (selected.getMonth()+1)+' 月 '+selected.getDate()+' 日';
+    selWeekday.textContent = weekdayName(selected);
+    var key = fmt(selected);
+
+    staffChips.innerHTML='';
+    noStaffMsg.style.display = staff.length===0 ? 'block' : 'none';
+    var daySched = schedule[key]||[];
+    staff.forEach(function(s){
+      var chip = document.createElement('button');
+      chip.type='button';
+      var on = daySched.indexOf(s.id) !== -1;
+      chip.className = 'chip'+(on?' on':'');
+      chip.style.color = s.color;
+      if(on){ chip.style.background = s.color; chip.style.color = contrastText(s.color); chip.style.borderColor = s.color; }
+      var sw = document.createElement('span'); sw.className='sw'; sw.style.background = on ? contrastText(s.color) : s.color;
+      chip.appendChild(sw);
+      var label = document.createElement('span'); label.textContent = s.code;
+      chip.appendChild(label);
+      chip.addEventListener('click', function(){
+        var list = schedule[key] ? schedule[key].slice() : [];
+        var idx = list.indexOf(s.id);
+        if(idx !== -1){
+          list.splice(idx,1);
+          schedHint.textContent='';
+          schedHint.className='schedhint';
+        } else {
+          if(list.length >= MAX_PER_DAY){
+            schedHint.textContent = '這天已達 '+MAX_PER_DAY+' 人上限';
+            schedHint.className='schedhint warn';
+            return;
+          }
+          list.push(s.id);
+          schedHint.textContent='';
+          schedHint.className='schedhint';
+        }
+        if(list.length===0) delete schedule[key]; else schedule[key]=list;
+        saveSchedule();
+        render();
+      });
+      staffChips.appendChild(chip);
+    });
+    schedHint.textContent = daySched.length ? ('已排 '+daySched.length+' / '+MAX_PER_DAY+' 人') : '';
+    if(daySched.length) schedHint.className='schedhint';
+  }
+
+  function renderStaffModal(){
+    staffList.innerHTML='';
+    if(staff.length===0){
+      var p=document.createElement('p'); p.className='desc'; p.textContent='目前尚無同仁，請在下方新增。';
+      staffList.appendChild(p);
+    }
+    staff.forEach(function(s){
+      var li=document.createElement('li');
+      var sw=document.createElement('span'); sw.className='sw'; sw.style.background=s.color;
+      var code=document.createElement('span'); code.className='code'; code.textContent=s.code;
+      var del=document.createElement('button'); del.className='del'; del.type='button'; del.setAttribute('aria-label','刪除同仁'); del.textContent='✕';
+      del.addEventListener('click', function(){
+        staff = staff.filter(function(x){ return x.id!==s.id; });
+        Object.keys(schedule).forEach(function(k){
+          schedule[k] = schedule[k].filter(function(id){ return id!==s.id; });
+          if(schedule[k].length===0) delete schedule[k];
+        });
+        saveStaff(); saveSchedule();
+        renderStaffModal(); render();
+      });
+      li.appendChild(sw); li.appendChild(code); li.appendChild(del);
+      staffList.appendChild(li);
+    });
+  }
+
+  document.getElementById('addStaffBtn').addEventListener('click', function(){
+    var code = staffCode.value.trim();
+    if(!code){ staffErr.textContent='請輸入代號'; staffCode.focus(); return; }
+    var color = selectedSwatch || customColor.value || '#3A7D7B';
+    staffErr.textContent='';
+    staff.push({ id: Date.now()+'-'+Math.random().toString(36).slice(2,7), code: code, color: color });
+    saveStaff();
+    staffCode.value='';
+    selectedSwatch=null;
+    Array.from(swatchesEl.children).forEach(function(x){ x.classList.remove('sel'); });
+    renderStaffModal();
+    render();
+  });
+  staffCode.addEventListener('input', function(){ if(staffCode.value.trim()) staffErr.textContent=''; });
+
+  document.getElementById('manageStaffBtn').addEventListener('click', function(){
+    staffOverlay.classList.add('open');
+    renderStaffModal();
+  });
+  document.getElementById('closeModalBtn').addEventListener('click', function(){ staffOverlay.classList.remove('open'); });
+  staffOverlay.addEventListener('click', function(e){ if(e.target===staffOverlay) staffOverlay.classList.remove('open'); });
+
+  document.getElementById('prevBtn').addEventListener('click', function(){ view.setMonth(view.getMonth()-1); render(); });
+  document.getElementById('nextBtn').addEventListener('click', function(){ view.setMonth(view.getMonth()+1); render(); });
+  document.getElementById('todayBtn').addEventListener('click', function(){ view=new Date(); view.setDate(1); selected=new Date(); render(); });
+  document.getElementById('resetBtn').addEventListener('click', function(){
+    if(!confirm('確定要清空這個月的所有排班嗎？此動作無法復原。')) return;
+    var year=view.getFullYear(), month=view.getMonth();
+    Object.keys(schedule).forEach(function(key){
+      var d=new Date(key);
+      if(d.getFullYear()===year && d.getMonth()===month) delete schedule[key];
+    });
+    saveSchedule(); render();
+  });
+
+  // 修復存成 PDF 功能
+  document.getElementById('pdfBtn').addEventListener('click', async function(){
+    var btn = this;
+    var origText = btn.textContent;
+    btn.textContent = '產生中…'; btn.disabled = true;
+
+    try {
+      if (typeof html2canvas === 'undefined' || typeof window.jspdf === 'undefined') {
+        window.print();
+        btn.textContent = origText; btn.disabled = false;
+        return;
+      }
+
+      var boardEl = document.getElementById('board');
+      var canvas = await html2canvas(boardEl, { backgroundColor: '#F6F1E4', scale: 2 });
+      var imgData = canvas.toDataURL('image/jpeg', 0.95);
+
+      var { jsPDF } = window.jspdf;
+      var pdf = new jsPDF('p', 'mm', 'a4');
+      var pdfWidth = pdf.internal.pageSize.getWidth();
+      var pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+      pdf.addImage(imgData, 'JPEG', 0, 10, pdfWidth, pdfHeight);
+      var fileName = view.getFullYear() + '-' + String(view.getMonth() + 1).padStart(2, '0') + '-排班表.pdf';
+      pdf.save(fileName);
+    } catch (e) {
+      console.error('PDF 生成失敗，改用原生列印:', e);
+      window.print();
+    } finally {
+      btn.textContent = origText; btn.disabled = false;
+    }
+  });
+
+  // 修復分享功能
+  document.getElementById('shareBtn').addEventListener('click', async function(){
+    var btn = this;
+    var origText = btn.textContent;
+    btn.textContent = '產生中…'; btn.disabled = true;
+
+    try {
+      if (typeof html2canvas === 'undefined') {
+        alert('尚未載入截圖元件，請稍後再試。');
+        btn.textContent = origText; btn.disabled = false;
+        return;
+      }
+
+      var boardEl = document.getElementById('board');
+      var canvas = await html2canvas(boardEl, { backgroundColor: '#F6F1E4', scale: 2 });
+
+      canvas.toBlob(async function(blob){
+        btn.textContent = origText; btn.disabled = false;
+        if (!blob) { alert('產生圖片失敗。'); return; }
+
+        var fileName = view.getFullYear() + '-' + String(view.getMonth() + 1).padStart(2, '0') + '-排班表.png';
+        var file = new File([blob], fileName, { type: 'image/png' });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({
+              files: [file],
+              title: '行事曆排班表',
+              text: view.getFullYear() + '年' + (view.getMonth() + 1) + '月排班表'
+            });
+            return;
+          } catch (e) {
+            if (e && e.name === 'AbortError') return;
+          }
+        }
+
+        if (navigator.share) {
+          try {
+            await navigator.share({
+              title: '行事曆排班表',
+              url: window.location.href
+            });
+            return;
+          } catch(e) {}
+        }
+
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function(){ URL.revokeObjectURL(url); }, 3000);
+        alert('圖片已下載至您的裝置，您可以直接將圖片發送給同仁！');
+      }, 'image/png');
+    } catch (e) {
+      console.error('分享失敗', e);
+      btn.textContent = origText; btn.disabled = false;
+      alert('分享過程發生錯誤，請重試。');
+    }
+  });
+
+  buildSwatches();
+  var safetyTimeout = new Promise(function(resolve){ setTimeout(resolve, 2500); });
+  Promise.race([loadAll(), safetyTimeout]).then(function(){
+    loadingMsg.style.display='none';
+    layoutWrap.style.display='grid';
+    render();
+  });
+})();
+</script>
+</body>
+</html>
